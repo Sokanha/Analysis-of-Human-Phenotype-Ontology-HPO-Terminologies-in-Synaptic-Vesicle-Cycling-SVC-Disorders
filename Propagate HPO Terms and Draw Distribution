@@ -1,0 +1,60 @@
+#Load necessary library
+library(tidyr)
+library(dplyr)
+library(ontologyIndex)
+
+#Filter HPO terms from main file for specific patient list
+svc.hpo <- svc.pt.list %>%
+  left_join(hpo_main, by = "Participant.Id")
+#To confirm if there is any patient without HPO terms
+sum(is.na(svc.hpo))
+
+#Creation of HPO propagated list
+##Need to split the HPO lists for each patient first
+split.svc.hpo <- split(svc.hpo, with(svc.hpo, interaction(Participant.Id)), drop = T)
+##Obtain SVC HPO propagated list
+ontology_hpo <- get_ontology(file.choose())
+svc.hpo.propagate <- lapply(split.svc.hpo, function(x){get_ancestors(ontology_hpo, x$Hpo.Id)})
+
+#To summarize and count each HPO propagated term
+##Unlist all HPO terms
+data.frame(factor(unlist(svc.hpo.propagate))) -> svc.hpo.prop.count
+##Count HPO propagated terms
+svc.hpo.prop.count <- svc.hpo.prop.count %>%
+  group_by(factor.unlist.svc.hpo.propagate..) %>%
+  count()
+##Change column names
+colnames(svc.hpo.prop.count) <- c("Hpo.Id", "count")
+##Change Hpo.Id to character
+svc.hpo.prop.count$Hpo.Id <- as.character(svc.hpo.prop.count$Hpo.Id)
+##Add HPO terms for HPO id and calculate frequency and IC
+svc.hpo.prop.count.freq <- svc.hpo.prop.count %>%
+  mutate(Hpo.Term = ontology_hpo$name[Hpo.Id]) %>%
+  mutate(freq = count/350) %>%
+  mutate(ic = -log2(freq))
+
+#To draw horizontal bar plot to show frequency of the first 20 terms
+##Call library
+library(ggplot2)
+svc.hpo.prop.count.freq %>%
+  arrange(desc(count)) %>%
+  slice_max(order_by = count, count = 20) %>%
+  ggplot(aes(x= reorder(Hpo.Term, count), y = count)) +
+  geom_bar(stat = 'identity', fill = "#69b3a2", color = "#e9ecef") +
+  ggtitle("Distribution of Top 20 HPO Terms (Propagated)") +
+  labs(x = "HPO Name", y = "count") +
+  theme_classic() +
+  theme(plot.title = element_text(size = 15)) +
+  coord_flip()
+
+#To count HPO Terms for each individuals after propagation
+data.frame(lengths(svc.hpo.propagate)) -> svc.pt.dist.prop
+
+#To draw histogram of distribution of number of HPO terms per each individual
+ggplot(svc.pt.dist.prop, aes(HPO.Numbers)) +
+  geom_histogram(binwidth = 1, fill = "#69b3a2", color = "#e9ecef", alpha = 0.9) +
+  scale_x_continuous(breaks = c(0,5,10,15,20,25,30,35,40,45,50,55)) +
+  ggtitle("Distribution of Number of HPO Propagated Term") +
+  labs(x = "Number of HPO Terms (Propagated)", y = "Number of Individuals") +
+  theme_classic() +
+  theme(plot.tile = element_text(size = 15))
