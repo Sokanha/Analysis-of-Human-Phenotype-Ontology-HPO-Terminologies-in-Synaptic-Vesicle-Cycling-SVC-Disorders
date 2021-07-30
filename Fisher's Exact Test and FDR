@@ -1,0 +1,49 @@
+#Load more packages as necessary
+library(purrr)
+library(broom)
+library(dplyr)
+library(tidyr)
+
+##Part1: Prepare file for fisher's test
+#Remove uncessary columns
+fisher_test_propagate_set1 <- select(fisher_test_propagate_proband3, -freq_case, -ic_case, -Hpo.Term_control, -freq_control, -ic_control, -Hpo.Term_case)
+
+#Make NA equals to 0
+fisher_test_propagate_set1[is.na(fisher_test_propagate_set1)] <- o
+
+#Make columns for nocount_case and nocount_control
+fisher_test_propagate_set1 <- fisher_test_propagate_set1 %>%
+  mutate(nocount_case = 350 - count_case) %>%
+  mutate(nocount_control = 1400 - count_control)
+
+#Change the column name
+colnames(fisher_test_propagate_set1) <- c("Hpo.Id", "yes_case", "yes_control", "no_case", "no_control")
+
+#Re-order the table
+fisher_test_propagate_set1 <- fisher_test_propagate_set1[,c(1,2,4,3,5)]
+
+##Part2: Advanced table prepping to run fisher's exact test for all HPO terms at once
+#Tidy the data
+#Stack the data into 3 columns so it is easy to convert to 2x2 contingency table needed for Fisher's exact test
+tidy.propagate.set1 <- fisher_test_propagate_set1 %>%
+  gather(-Hpo.Id, key = svc, value = count) %>% #gather case/control into 1 column
+  separate(svc, into = c("y_n", "svc")) #split into count column and case/control column
+
+#Split by Hpo.Id
+##This creates a list of dataframe
+list.tidy.propagate.set1 <- tidy.propagate.set1 %>%
+  split(.$Hpo.Id)
+
+#Create contingency table for each Hpo.Id
+propagate.set1.table <- map(list.tidy.propagate.set1, ~xtabs(count ~ svc + y_n, data = .)[,c(2,1)])
+
+#Run Fisher's test and keep the data in 1 table together
+propagate.set1.table.result <- map_dfr(propagate.set1.table, ~fisher.test(.) %>% tidy(), .id = "Hpo.Id")
+
+#Perform FRD correction
+propagate.set1.table.result.fdr <- propagate.set1.table.result %>%
+  select(Hpo.Id, p.value) %>%
+  mutate(p.adj = p.adjust(p.value, "fdr"))
+
+propagate.set1.table.result
+propagate.set1.table.result.fdr
